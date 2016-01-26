@@ -1,4 +1,3 @@
-import urllib2
 import urllib
 
 from lxml import etree
@@ -77,13 +76,13 @@ def _process_multiple(addresses):
 
     return results
 
-def _parse_response(res):
+def _parse_response(res, respEle):
     # General error, e.g., authorization
     error = _find_error(res.getroot())
     if error is not None:
         raise _get_error(error)
 
-    results = res.findall('Address')
+    results = res.findall(respEle)
     length = len(results)
     if length == 0:
         raise TypeError(
@@ -93,21 +92,21 @@ def _parse_response(res):
         return _process_one(results.pop())
     return _process_multiple(results)
 
-def _get_response(xml):
+def _get_response(xml, api):
     params = OrderedDict([
-            ('API', 'Verify'),
+            ('API', api),
             ('XML', etree.tostring(xml)),
             ])
     url = '{api_url}?{params}'.format(
         api_url=api_url,
-        params=urllib.urlencode(params),
+        params=urllib.parse.urlencode(params),
         )
 
-    res = urllib2.urlopen(url)
+    res = urllib.request.urlopen(url)
     res = etree.parse(res)
 
     return res
-
+    
 def _create_xml(
     user_id,
     *args
@@ -126,7 +125,7 @@ def _create_xml(
 
     for i,arg in enumerate(args):
         address = arg['address']
-        city = arg['city']
+        city = arg.get('city', None)
         state = arg.get('state', None)
         zip_code = arg.get('zip_code', None)
         address_extended = arg.get('address_extended', None)
@@ -153,7 +152,8 @@ def _create_xml(
         address_el.append(address_2_el)
 
         city_el = etree.Element('City')
-        city_el.text = city
+        if (city is not None):
+            city_el.text = city
         address_el.append(city_el)
 
         state_el = etree.Element('State')
@@ -188,7 +188,25 @@ def _create_xml(
 
 def verify(user_id, *args):
     xml = _create_xml(user_id, *args)
-    res = _get_response(xml)
-    res = _parse_response(res)
+    res = _get_response(xml, 'Verify')
+    res = _parse_response(res, 'Address')
 
+    return res
+
+def createCityStateXml(user_id, zip5):
+    root = etree.Element('CityStateLookupRequest', USERID=user_id)
+
+    zipcode_el = etree.Element('ZipCode', ID=str(0))
+    root.append(zipcode_el)
+    
+    zip5_el = etree.Element('Zip5')
+    zip5_el.text = zip5
+    zipcode_el.append(zip5_el)
+
+    return root    
+
+def getCityState(user_id, zip):
+    xml = createCityStateXml(user_id, zip)
+    res = _get_response(xml, 'CityStateLookup')
+    res = _parse_response(res, 'ZipCode')
     return res
